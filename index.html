@@ -339,20 +339,43 @@
     let imageFiles = [];
     let extractedRows = [];
 
-    // ----- helpers -----
-    function formatDateToExcel(dateStr) {
+    // ----- format date to plain text without separators (e.g., 04AUG1964) -----
+    function formatDatePlain(dateStr) {
       if (!dateStr || dateStr === '—' || dateStr === '') return '—';
-      // try to parse YYYY-MM-DD
-      const m = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
+      
+      // If already in plain format like 04AUG1964, return as is
+      if (dateStr.match(/^\d{2}[A-Z]{3}\d{4}$/)) return dateStr;
+      
+      // Try to parse YYYY-MM-DD
+      let m = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
       if (m) {
-        const d = new Date(m[1], m[2]-1, m[3]);
-        if (!isNaN(d)) {
-          return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-');
-        }
+        const year = m[1];
+        const month = parseInt(m[2]);
+        const day = m[3];
+        const monthNames = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+        return day + monthNames[month-1] + year;
       }
-      // if already formatted like 04-AUG-1964
-      if (dateStr.match(/\d{2}-[A-Z]{3}-\d{4}/)) return dateStr;
-      // fallback: return as is
+      
+      // Try to parse DD-MM-YYYY or DD/MM/YYYY
+      m = dateStr.match(/(\d{2})[-\/](\d{2})[-\/](\d{4})/);
+      if (m) {
+        const day = m[1];
+        const month = parseInt(m[2]);
+        const year = m[3];
+        const monthNames = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+        return day + monthNames[month-1] + year;
+      }
+      
+      // Try to parse DD-MON-YYYY (e.g., 04-AUG-1964)
+      m = dateStr.match(/(\d{2})[- ]([A-Za-z]{3})[- ](\d{4})/);
+      if (m) {
+        const day = m[1];
+        const month = m[2].toUpperCase();
+        const year = m[3];
+        return day + month + year;
+      }
+      
+      // If it's already a plain date, return as is
       return dateStr;
     }
 
@@ -391,9 +414,9 @@
       }
       let html = '';
       extractedRows.forEach((row, i) => {
-        const dob = row.dob && row.dob !== '—' ? formatDateToExcel(row.dob) : '—';
-        const issue = row.issue && row.issue !== '—' ? formatDateToExcel(row.issue) : '—';
-        const expiry = row.expiry && row.expiry !== '—' ? formatDateToExcel(row.expiry) : '—';
+        const dob = row.dob && row.dob !== '—' ? formatDatePlain(row.dob) : '—';
+        const issue = row.issue && row.issue !== '—' ? formatDatePlain(row.issue) : '—';
+        const expiry = row.expiry && row.expiry !== '—' ? formatDatePlain(row.expiry) : '—';
         html += `<tr>
           <td>${i+1}</td>
           <td>${row.givenName || ''}</td>
@@ -418,7 +441,6 @@
         setTimeout(() => { liveToast.style.background = '#1a3a4a'; }, 2500);
         return;
       }
-      // No limit – push all valid
       imageFiles.push(...valid);
       extractedRows = [];
       updateUI();
@@ -598,9 +620,9 @@
         return;
       }
       const rowsForExcel = extractedRows.map((r, idx) => {
-        const dob = r.dob && r.dob !== '—' ? formatDateToExcel(r.dob) : '';
-        const issue = r.issue && r.issue !== '—' ? formatDateToExcel(r.issue) : '';
-        const expiry = r.expiry && r.expiry !== '—' ? formatDateToExcel(r.expiry) : '';
+        const dob = r.dob && r.dob !== '—' ? formatDatePlain(r.dob) : '';
+        const issue = r.issue && r.issue !== '—' ? formatDatePlain(r.issue) : '';
+        const expiry = r.expiry && r.expiry !== '—' ? formatDatePlain(r.expiry) : '';
         return {
           '#': idx+1,
           'Given Name': r.givenName || '',
