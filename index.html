@@ -339,44 +339,116 @@
     let imageFiles = [];
     let extractedRows = [];
 
-    // ----- format date to plain text without separators (e.g., 04AUG1964) -----
+    // ----- Month names for date conversion -----
+    const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const MONTHS_FULL = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
+
+    // ----- Format date to plain text (DDMMMYYYY) -----
     function formatDatePlain(dateStr) {
-      if (!dateStr || dateStr === '—' || dateStr === '') return '—';
+      if (!dateStr || dateStr === '—' || dateStr === '' || dateStr === 'undefined') return '—';
       
-      // If already in plain format like 04AUG1964, return as is
-      if (dateStr.match(/^\d{2}[A-Z]{3}\d{4}$/)) return dateStr;
+      // Clean the string
+      let cleaned = dateStr.replace(/[^0-9A-Za-z\-/ ]/g, '').trim();
       
-      // Try to parse YYYY-MM-DD
-      let m = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
+      // If already in DDMMMYYYY format (e.g., 04AUG1964)
+      if (cleaned.match(/^\d{2}[A-Z]{3}\d{4}$/)) return cleaned;
+      
+      // Try DD-MMM-YYYY (e.g., 04-AUG-1964)
+      let m = cleaned.match(/(\d{2})[- ]([A-Za-z]{3,9})[- ](\d{4})/);
       if (m) {
-        const year = m[1];
-        const month = parseInt(m[2]);
-        const day = m[3];
-        const monthNames = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-        return day + monthNames[month-1] + year;
-      }
-      
-      // Try to parse DD-MM-YYYY or DD/MM/YYYY
-      m = dateStr.match(/(\d{2})[-\/](\d{2})[-\/](\d{4})/);
-      if (m) {
-        const day = m[1];
-        const month = parseInt(m[2]);
-        const year = m[3];
-        const monthNames = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-        return day + monthNames[month-1] + year;
-      }
-      
-      // Try to parse DD-MON-YYYY (e.g., 04-AUG-1964)
-      m = dateStr.match(/(\d{2})[- ]([A-Za-z]{3})[- ](\d{4})/);
-      if (m) {
-        const day = m[1];
-        const month = m[2].toUpperCase();
-        const year = m[3];
+        let day = m[1];
+        let month = m[2].toUpperCase().substring(0,3);
+        let year = m[3];
         return day + month + year;
       }
       
-      // If it's already a plain date, return as is
-      return dateStr;
+      // Try DD-MM-YYYY or DD/MM/YYYY
+      m = cleaned.match(/(\d{2})[-\/](\d{2})[-\/](\d{4})/);
+      if (m) {
+        let day = m[1];
+        let monthIdx = parseInt(m[2]) - 1;
+        let year = m[3];
+        if (monthIdx >= 0 && monthIdx < 12) {
+          return day + MONTHS[monthIdx] + year;
+        }
+      }
+      
+      // Try YYYY-MM-DD
+      m = cleaned.match(/(\d{4})[-\/](\d{2})[-\/](\d{2})/);
+      if (m) {
+        let year = m[1];
+        let monthIdx = parseInt(m[2]) - 1;
+        let day = m[3];
+        if (monthIdx >= 0 && monthIdx < 12) {
+          return day + MONTHS[monthIdx] + year;
+        }
+      }
+      
+      // Try DD MMM YYYY (with full month name)
+      m = cleaned.match(/(\d{2})\s+([A-Za-z]{3,9})\s+(\d{4})/);
+      if (m) {
+        let day = m[1];
+        let month = m[2].toUpperCase().substring(0,3);
+        let year = m[3];
+        return day + month + year;
+      }
+      
+      // If nothing matches, return as is but clean it
+      return cleaned;
+    }
+
+    // ----- Extract date from MRZ or text -----
+    function extractDate(text) {
+      // Look for date patterns in the text
+      let patterns = [
+        // DD MMM YYYY
+        /(\d{2})\s+([A-Za-z]{3,9})\s+(\d{4})/g,
+        // DD-MMM-YYYY
+        /(\d{2})[- ]([A-Za-z]{3,9})[- ](\d{4})/g,
+        // DD-MM-YYYY
+        /(\d{2})[-\/](\d{2})[-\/](\d{4})/g,
+        // YYYY-MM-DD
+        /(\d{4})[-\/](\d{2})[-\/](\d{2})/g
+      ];
+      
+      let allMatches = [];
+      for (let pattern of patterns) {
+        let match;
+        let regex = new RegExp(pattern);
+        while ((match = regex.exec(text)) !== null) {
+          allMatches.push(match);
+        }
+      }
+      
+      if (allMatches.length > 0) {
+        // Use the last match (often the most recent date)
+        let last = allMatches[allMatches.length - 1];
+        let groups = last.slice(1);
+        // Try to determine format
+        if (groups.length === 3) {
+          // Check if first is day (01-31)
+          let first = parseInt(groups[0]);
+          let second = groups[1];
+          let third = parseInt(groups[2]);
+          
+          // If second is a month name
+          if (isNaN(second)) {
+            let month = second.toUpperCase().substring(0,3);
+            let day = String(first).padStart(2,'0');
+            let year = String(third);
+            return day + month + year;
+          } else {
+            // Numeric month
+            let monthIdx = parseInt(second) - 1;
+            let day = String(first).padStart(2,'0');
+            let year = String(third);
+            if (monthIdx >= 0 && monthIdx < 12) {
+              return day + MONTHS[monthIdx] + year;
+            }
+          }
+        }
+      }
+      return null;
     }
 
     function updateUI() {
@@ -414,9 +486,9 @@
       }
       let html = '';
       extractedRows.forEach((row, i) => {
-        const dob = row.dob && row.dob !== '—' ? formatDatePlain(row.dob) : '—';
-        const issue = row.issue && row.issue !== '—' ? formatDatePlain(row.issue) : '—';
-        const expiry = row.expiry && row.expiry !== '—' ? formatDatePlain(row.expiry) : '—';
+        const dob = row.dob && row.dob !== '—' && row.dob !== 'undefined' ? formatDatePlain(row.dob) : '—';
+        const issue = row.issue && row.issue !== '—' && row.issue !== 'undefined' ? formatDatePlain(row.issue) : '—';
+        const expiry = row.expiry && row.expiry !== '—' && row.expiry !== 'undefined' ? formatDatePlain(row.expiry) : '—';
         html += `<tr>
           <td>${i+1}</td>
           <td>${row.givenName || ''}</td>
@@ -514,7 +586,10 @@
         reader.onload = async (e) => {
           try {
             const imageData = e.target.result;
-            const result = await Tesseract.recognize(imageData, 'eng', { logger: () => {} });
+            const result = await Tesseract.recognize(imageData, 'eng', { 
+              logger: () => {},
+              tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789<>/ -'
+            });
             resolve(result.data.text);
           } catch (err) { reject(err); }
         };
@@ -523,83 +598,151 @@
       });
     }
 
+    // ----- Main parser with improved accuracy -----
     function parsePassportText(text) {
       if (!text || text.length < 8) return null;
+      
+      // Clean and normalize
       const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 1);
       const fullText = lines.join(' ');
+      
+      let givenName = '', surname = '', passport = '', dob = '', nationality = 'PAKISTAN', expiry = '', issue = '';
+      
+      // ----- Extract MRZ Line -----
       let mrzLine = null;
       for (let line of lines) {
-        if (line.startsWith('P<') || line.startsWith('P<PAK')) { mrzLine = line; break; }
+        if (line.startsWith('P<') || line.startsWith('P<PAK')) { 
+          mrzLine = line; 
+          break; 
+        }
       }
+      
+      // If no MRZ found, try to find line with multiple < characters
       if (!mrzLine) {
         for (let line of lines) {
-          if (line.includes('<') && line.length > 20 && /\d/.test(line)) { mrzLine = line; break; }
+          if (line.includes('<<') && line.length > 20 && /\d/.test(line)) { 
+            mrzLine = line; 
+            break; 
+          }
         }
       }
-      let givenName = '', surname = '', passport = '', dob = '', nationality = 'PAKISTAN', expiry = '', issue = '';
 
+      // ----- Parse MRZ -----
       if (mrzLine) {
-        if (mrzLine.startsWith('P<PAK')) {
-          const mrzWithout = mrzLine.substring(5);
-          const split = mrzWithout.split('<<');
-          if (split.length >= 2) {
-            surname = split[0].replace(/<+/g, '').trim();
-            givenName = split[1].replace(/<+$/, '').replace(/</g, ' ').trim();
-          } else {
-            const all = mrzWithout.replace(/<+/g, ' ').trim().split(' ');
-            if (all.length >= 2) { surname = all[0]; givenName = all.slice(1).join(' '); }
+        // Remove spaces and clean
+        let cleanMRZ = mrzLine.replace(/\s/g, '');
+        
+        // Extract name parts
+        if (cleanMRZ.startsWith('P<PAK')) {
+          const afterPAK = cleanMRZ.substring(5);
+          const parts = afterPAK.split('<<');
+          if (parts.length >= 2) {
+            // Surname is first part
+            surname = parts[0].replace(/<+$/, '').trim();
+            // Given names are second part, split by <
+            let givenPart = parts[1].replace(/<+$/, '');
+            givenName = givenPart.split('<').filter(s => s.length > 0).join(' ');
           }
-        } else {
-          const tokens = mrzLine.split('<');
-          if (tokens.length > 2) {
-            let start = tokens[0] === 'P' ? 2 : 1;
-            if (tokens[1] === 'PAK') start = 2;
-            surname = tokens[start] ? tokens[start].replace(/<+/g, '').trim() : '';
-            givenName = tokens.slice(start+1).join(' ').replace(/<+$/, '').replace(/</g, ' ').trim();
+        } else if (cleanMRZ.startsWith('P<')) {
+          const afterP = cleanMRZ.substring(2);
+          const parts = afterP.split('<<');
+          if (parts.length >= 2) {
+            // First part might contain country + surname
+            let firstPart = parts[0];
+            // Remove country code if present (PAK, etc.)
+            if (firstPart.length > 3 && firstPart.substring(0,3).match(/[A-Z]{3}/)) {
+              firstPart = firstPart.substring(3);
+            }
+            surname = firstPart.replace(/<+$/, '').trim();
+            let givenPart = parts[1].replace(/<+$/, '');
+            givenName = givenPart.split('<').filter(s => s.length > 0).join(' ');
           }
         }
-        // second line
-        const lines2 = lines.filter(l => l.length > 10);
+        
+        // Clean up names - remove extra spaces and special chars
+        surname = surname.replace(/[^A-Za-z\- ]/g, '').trim();
+        givenName = givenName.replace(/[^A-Za\- ]/g, '').trim();
+        
+        // ----- Extract Passport Number and Dates from MRZ lines -----
+        // Find the second line of MRZ (contains numbers)
+        const mrzLines = lines.filter(l => l.length > 15 && /\d/.test(l));
         let secondLine = '';
-        for (let l of lines2) {
-          if (l.includes('PAK') && l.length > 20 && /\d/.test(l)) { secondLine = l; break; }
+        for (let line of mrzLines) {
+          if (line.length > 20 && (line.includes('PAK') || /\d{9}/.test(line))) {
+            secondLine = line;
+            break;
+          }
         }
-        if (!secondLine && lines2.length > 1) secondLine = lines2[1];
+        
         if (secondLine) {
-          const passMatch = secondLine.match(/([A-Z]{2}\d{7,8})/);
+          // Clean second line
+          let cleanSecond = secondLine.replace(/\s/g, '');
+          
+          // Extract passport number (2 letters + 7 digits)
+          let passMatch = cleanSecond.match(/([A-Z]{2}\d{7})/);
           if (passMatch) passport = passMatch[1];
-          const dobMatch = secondLine.match(/(\d{2})(\d{2})(\d{2})(?=[A-Z])/);
+          
+          // Extract DOB: YYMMDD followed by gender
+          let dobMatch = cleanSecond.match(/(\d{2})(\d{2})(\d{2})([MF])/);
           if (dobMatch) {
-            const d = dobMatch[3], m = dobMatch[2], y = dobMatch[1];
-            dob = `20${y}-${m}-${d}`;
+            let day = dobMatch[3];
+            let month = dobMatch[2];
+            let year = '19' + dobMatch[1];
+            // If year > 2000, use 20
+            if (parseInt(dobMatch[1]) < 30) year = '20' + dobMatch[1];
+            dob = `${day}-${month}-${year}`;
           }
-          const expiryMatch = secondLine.match(/(\d{2})(\d{2})(\d{2})(?=\d{6})/);
+          
+          // Extract Expiry: YYMMDD after gender
+          let expiryMatch = cleanSecond.match(/[MF](\d{2})(\d{2})(\d{2})/);
           if (expiryMatch) {
-            const d = expiryMatch[3], m = expiryMatch[2], y = expiryMatch[1];
-            expiry = `20${y}-${m}-${d}`;
+            let day = expiryMatch[3];
+            let month = expiryMatch[2];
+            let year = '20' + expiryMatch[1];
+            expiry = `${day}-${month}-${year}`;
           }
+          
+          // Extract nationality from second line
+          if (cleanSecond.includes('PAK')) nationality = 'PAKISTAN';
         }
-        if (mrzLine.includes('PAK')) nationality = 'PAKISTAN';
       }
 
-      // fallback regex
+      // ----- Fallback: try to extract from full text -----
       if (!passport) {
-        const p = fullText.match(/([A-Z]{2}\d{7,8})/);
+        let p = fullText.match(/([A-Z]{2}\d{7})/);
         if (p) passport = p[1];
       }
-      if (!dob) {
-        const d = fullText.match(/(\d{2})\s*(\d{2})\s*(\d{4})/);
-        if (d) dob = `${d[3]}-${d[2]}-${d[1]}`;
+      
+      // Try to extract dates from full text
+      if (!dob || dob === '—') {
+        let dateFound = extractDate(fullText);
+        if (dateFound) dob = dateFound;
       }
-      if (!expiry) {
-        const exp = fullText.match(/(\d{2})\s*(\d{2})\s*(\d{4})/g);
-        if (exp && exp.length > 1) {
-          const last = exp[exp.length-1];
-          const parts = last.match(/(\d{2})\s*(\d{2})\s*(\d{4})/);
-          if (parts) expiry = `${parts[3]}-${parts[2]}-${parts[1]}`;
+      
+      if (!expiry || expiry === '—') {
+        // Look for expiry date - often after 'EXP' or 'EXPIRY'
+        let expiryText = fullText.match(/(?:EXP|EXPIRY|EXPIRY DATE)[:\s]*([0-9A-Z\-/ ]{6,15})/i);
+        if (expiryText) {
+          let dateFound = extractDate(expiryText[1]);
+          if (dateFound) expiry = dateFound;
+        } else {
+          // Try to find any date that looks like expiry (future date)
+          let allDates = fullText.match(/(\d{2}[- ](?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[- ]\d{4})/gi);
+          if (allDates && allDates.length > 1) {
+            let lastDate = allDates[allDates.length - 1];
+            let dateFound = extractDate(lastDate);
+            if (dateFound) expiry = dateFound;
+          }
         }
       }
+
+      // Clean up data
+      if (givenName && givenName.length > 50) givenName = givenName.substring(0, 50);
+      if (surname && surname.length > 50) surname = surname.substring(0, 50);
+      
+      // If we have at least a name or passport, return data
       if (!givenName && !surname && !passport) return null;
+      
       return {
         givenName: givenName || '—',
         fatherName: '—',
@@ -620,9 +763,9 @@
         return;
       }
       const rowsForExcel = extractedRows.map((r, idx) => {
-        const dob = r.dob && r.dob !== '—' ? formatDatePlain(r.dob) : '';
-        const issue = r.issue && r.issue !== '—' ? formatDatePlain(r.issue) : '';
-        const expiry = r.expiry && r.expiry !== '—' ? formatDatePlain(r.expiry) : '';
+        const dob = r.dob && r.dob !== '—' && r.dob !== 'undefined' ? formatDatePlain(r.dob) : '';
+        const issue = r.issue && r.issue !== '—' && r.issue !== 'undefined' ? formatDatePlain(r.issue) : '';
+        const expiry = r.expiry && r.expiry !== '—' && r.expiry !== 'undefined' ? formatDatePlain(r.expiry) : '';
         return {
           '#': idx+1,
           'Given Name': r.givenName || '',
