@@ -339,27 +339,26 @@
     let imageFiles = [];
     let extractedRows = [];
 
-    // ----- Month names for date conversion -----
+    // ----- Month names -----
     const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-    const MONTHS_FULL = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
 
-    // ----- Format date to plain text (DDMMMYYYY) -----
-    function formatDatePlain(dateStr) {
+    // ----- Format date with spaces: DD MMM YYYY -----
+    function formatDateWithSpaces(dateStr) {
       if (!dateStr || dateStr === '—' || dateStr === '' || dateStr === 'undefined') return '—';
       
       // Clean the string
       let cleaned = dateStr.replace(/[^0-9A-Za-z\-/ ]/g, '').trim();
       
-      // If already in DDMMMYYYY format (e.g., 04AUG1964)
-      if (cleaned.match(/^\d{2}[A-Z]{3}\d{4}$/)) return cleaned;
+      // If already in DD MMM YYYY format (e.g., 04 AUG 1964)
+      if (cleaned.match(/^\d{2}\s+[A-Z]{3}\s+\d{4}$/)) return cleaned;
       
-      // Try DD-MMM-YYYY (e.g., 04-AUG-1964)
+      // Try DD-MMM-YYYY (e.g., 04-AUG-1964) or DD MMM YYYY
       let m = cleaned.match(/(\d{2})[- ]([A-Za-z]{3,9})[- ](\d{4})/);
       if (m) {
         let day = m[1];
         let month = m[2].toUpperCase().substring(0,3);
         let year = m[3];
-        return day + month + year;
+        return day + ' ' + month + ' ' + year;
       }
       
       // Try DD-MM-YYYY or DD/MM/YYYY
@@ -369,7 +368,7 @@
         let monthIdx = parseInt(m[2]) - 1;
         let year = m[3];
         if (monthIdx >= 0 && monthIdx < 12) {
-          return day + MONTHS[monthIdx] + year;
+          return day + ' ' + MONTHS[monthIdx] + ' ' + year;
         }
       }
       
@@ -380,7 +379,7 @@
         let monthIdx = parseInt(m[2]) - 1;
         let day = m[3];
         if (monthIdx >= 0 && monthIdx < 12) {
-          return day + MONTHS[monthIdx] + year;
+          return day + ' ' + MONTHS[monthIdx] + ' ' + year;
         }
       }
       
@@ -390,65 +389,35 @@
         let day = m[1];
         let month = m[2].toUpperCase().substring(0,3);
         let year = m[3];
-        return day + month + year;
+        return day + ' ' + month + ' ' + year;
       }
       
       // If nothing matches, return as is but clean it
       return cleaned;
     }
 
-    // ----- Extract date from MRZ or text -----
-    function extractDate(text) {
-      // Look for date patterns in the text
-      let patterns = [
-        // DD MMM YYYY
-        /(\d{2})\s+([A-Za-z]{3,9})\s+(\d{4})/g,
-        // DD-MMM-YYYY
-        /(\d{2})[- ]([A-Za-z]{3,9})[- ](\d{4})/g,
-        // DD-MM-YYYY
-        /(\d{2})[-\/](\d{2})[-\/](\d{4})/g,
-        // YYYY-MM-DD
-        /(\d{4})[-\/](\d{2})[-\/](\d{2})/g
-      ];
+    // ----- Validate date is not in future (for DOB) -----
+    function isValidDOB(dateStr) {
+      if (!dateStr || dateStr === '—') return false;
       
-      let allMatches = [];
-      for (let pattern of patterns) {
-        let match;
-        let regex = new RegExp(pattern);
-        while ((match = regex.exec(text)) !== null) {
-          allMatches.push(match);
-        }
+      let parts = dateStr.split(' ');
+      if (parts.length === 3) {
+        let day = parseInt(parts[0]);
+        let month = parts[1];
+        let year = parseInt(parts[2]);
+        
+        if (isNaN(day) || isNaN(year)) return false;
+        
+        // Check if year is in the future
+        let currentYear = new Date().getFullYear();
+        if (year > currentYear) return false;
+        
+        // Check if year is reasonable (1900-2025)
+        if (year < 1900 || year > currentYear) return false;
+        
+        return true;
       }
-      
-      if (allMatches.length > 0) {
-        // Use the last match (often the most recent date)
-        let last = allMatches[allMatches.length - 1];
-        let groups = last.slice(1);
-        // Try to determine format
-        if (groups.length === 3) {
-          // Check if first is day (01-31)
-          let first = parseInt(groups[0]);
-          let second = groups[1];
-          let third = parseInt(groups[2]);
-          
-          // If second is a month name
-          if (isNaN(second)) {
-            let month = second.toUpperCase().substring(0,3);
-            let day = String(first).padStart(2,'0');
-            let year = String(third);
-            return day + month + year;
-          } else {
-            // Numeric month
-            let monthIdx = parseInt(second) - 1;
-            let day = String(first).padStart(2,'0');
-            let year = String(third);
-            if (monthIdx >= 0 && monthIdx < 12) {
-              return day + MONTHS[monthIdx] + year;
-            }
-          }
-        }
-      }
-      return null;
+      return false;
     }
 
     function updateUI() {
@@ -486,9 +455,9 @@
       }
       let html = '';
       extractedRows.forEach((row, i) => {
-        const dob = row.dob && row.dob !== '—' && row.dob !== 'undefined' ? formatDatePlain(row.dob) : '—';
-        const issue = row.issue && row.issue !== '—' && row.issue !== 'undefined' ? formatDatePlain(row.issue) : '—';
-        const expiry = row.expiry && row.expiry !== '—' && row.expiry !== 'undefined' ? formatDatePlain(row.expiry) : '—';
+        const dob = row.dob && row.dob !== '—' && row.dob !== 'undefined' ? formatDateWithSpaces(row.dob) : '—';
+        const issue = row.issue && row.issue !== '—' && row.issue !== 'undefined' ? formatDateWithSpaces(row.issue) : '—';
+        const expiry = row.expiry && row.expiry !== '—' && row.expiry !== 'undefined' ? formatDateWithSpaces(row.expiry) : '—';
         html += `<tr>
           <td>${i+1}</td>
           <td>${row.givenName || ''}</td>
@@ -530,7 +499,7 @@
       setTimeout(() => { liveToast.style.background = '#1a3a4a'; }, 2000);
     }
 
-    // ----- OCR + parse (improved) -----
+    // ----- OCR + parse -----
     async function runExtraction() {
       if (imageFiles.length === 0) {
         liveToast.textContent = '⚠️ No images to extract';
@@ -598,11 +567,10 @@
       });
     }
 
-    // ----- Main parser with improved accuracy -----
+    // ----- Main parser -----
     function parsePassportText(text) {
       if (!text || text.length < 8) return null;
       
-      // Clean and normalize
       const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 1);
       const fullText = lines.join(' ');
       
@@ -617,7 +585,6 @@
         }
       }
       
-      // If no MRZ found, try to find line with multiple < characters
       if (!mrzLine) {
         for (let line of lines) {
           if (line.includes('<<') && line.length > 20 && /\d/.test(line)) { 
@@ -629,17 +596,13 @@
 
       // ----- Parse MRZ -----
       if (mrzLine) {
-        // Remove spaces and clean
         let cleanMRZ = mrzLine.replace(/\s/g, '');
         
-        // Extract name parts
         if (cleanMRZ.startsWith('P<PAK')) {
           const afterPAK = cleanMRZ.substring(5);
           const parts = afterPAK.split('<<');
           if (parts.length >= 2) {
-            // Surname is first part
             surname = parts[0].replace(/<+$/, '').trim();
-            // Given names are second part, split by <
             let givenPart = parts[1].replace(/<+$/, '');
             givenName = givenPart.split('<').filter(s => s.length > 0).join(' ');
           }
@@ -647,9 +610,7 @@
           const afterP = cleanMRZ.substring(2);
           const parts = afterP.split('<<');
           if (parts.length >= 2) {
-            // First part might contain country + surname
             let firstPart = parts[0];
-            // Remove country code if present (PAK, etc.)
             if (firstPart.length > 3 && firstPart.substring(0,3).match(/[A-Z]{3}/)) {
               firstPart = firstPart.substring(3);
             }
@@ -659,12 +620,10 @@
           }
         }
         
-        // Clean up names - remove extra spaces and special chars
         surname = surname.replace(/[^A-Za-z\- ]/g, '').trim();
         givenName = givenName.replace(/[^A-Za\- ]/g, '').trim();
         
-        // ----- Extract Passport Number and Dates from MRZ lines -----
-        // Find the second line of MRZ (contains numbers)
+        // ----- Extract Passport Number and Dates from MRZ second line -----
         const mrzLines = lines.filter(l => l.length > 15 && /\d/.test(l));
         let secondLine = '';
         for (let line of mrzLines) {
@@ -675,7 +634,6 @@
         }
         
         if (secondLine) {
-          // Clean second line
           let cleanSecond = secondLine.replace(/\s/g, '');
           
           // Extract passport number (2 letters + 7 digits)
@@ -688,9 +646,13 @@
             let day = dobMatch[3];
             let month = dobMatch[2];
             let year = '19' + dobMatch[1];
-            // If year > 2000, use 20
             if (parseInt(dobMatch[1]) < 30) year = '20' + dobMatch[1];
-            dob = `${day}-${month}-${year}`;
+            
+            // Validate - year should not be in future
+            let currentYear = new Date().getFullYear();
+            if (parseInt(year) <= currentYear && parseInt(year) >= 1900) {
+              dob = day + ' ' + MONTHS[parseInt(month)-1] + ' ' + year;
+            }
           }
           
           // Extract Expiry: YYMMDD after gender
@@ -699,39 +661,83 @@
             let day = expiryMatch[3];
             let month = expiryMatch[2];
             let year = '20' + expiryMatch[1];
-            expiry = `${day}-${month}-${year}`;
+            expiry = day + ' ' + MONTHS[parseInt(month)-1] + ' ' + year;
           }
           
-          // Extract nationality from second line
           if (cleanSecond.includes('PAK')) nationality = 'PAKISTAN';
         }
       }
 
-      // ----- Fallback: try to extract from full text -----
+      // ----- Fallback: extract from full text -----
       if (!passport) {
         let p = fullText.match(/([A-Z]{2}\d{7})/);
         if (p) passport = p[1];
       }
       
-      // Try to extract dates from full text
-      if (!dob || dob === '—') {
-        let dateFound = extractDate(fullText);
-        if (dateFound) dob = dateFound;
+      // Try to extract DOB from text if not found
+      if (!dob || dob === '—' || dob === 'undefined') {
+        // Look for date patterns in text
+        let datePatterns = [
+          /(\d{2})\s+([A-Z]{3})\s+(\d{4})/g,
+          /(\d{2})[- ]([A-Za-z]{3,9})[- ](\d{4})/g,
+          /(\d{2})[-\/](\d{2})[-\/](\d{4})/g
+        ];
+        
+        let allDates = [];
+        for (let pattern of datePatterns) {
+          let match;
+          let regex = new RegExp(pattern);
+          while ((match = regex.exec(fullText)) !== null) {
+            allDates.push(match);
+          }
+        }
+        
+        if (allDates.length > 0) {
+          // Try to find a past date (DOB)
+          for (let match of allDates) {
+            let groups = match.slice(1);
+            if (groups.length === 3) {
+              let day = groups[0];
+              let month = groups[1];
+              let year = groups[2];
+              
+              // If month is numeric, convert to 3-letter
+              if (!isNaN(month)) {
+                let monthIdx = parseInt(month) - 1;
+                if (monthIdx >= 0 && monthIdx < 12) {
+                  month = MONTHS[monthIdx];
+                }
+              } else {
+                month = month.toUpperCase().substring(0,3);
+              }
+              
+              let yearNum = parseInt(year);
+              let currentYear = new Date().getFullYear();
+              
+              // Check if it's a valid DOB (past date)
+              if (yearNum <= currentYear && yearNum >= 1900 && !isNaN(day)) {
+                dob = day + ' ' + month + ' ' + year;
+                break;
+              }
+            }
+          }
+        }
       }
       
-      if (!expiry || expiry === '—') {
-        // Look for expiry date - often after 'EXP' or 'EXPIRY'
-        let expiryText = fullText.match(/(?:EXP|EXPIRY|EXPIRY DATE)[:\s]*([0-9A-Z\-/ ]{6,15})/i);
-        if (expiryText) {
-          let dateFound = extractDate(expiryText[1]);
-          if (dateFound) expiry = dateFound;
+      // Try to extract Expiry from text if not found
+      if (!expiry || expiry === '—' || expiry === 'undefined') {
+        let expiryMatch = fullText.match(/(?:EXP|EXPIRY|EXPIRY DATE)[:\s]*([0-9A-Z\-/ ]{6,15})/i);
+        if (expiryMatch) {
+          let dateStr = expiryMatch[1].trim();
+          let formatted = formatDateWithSpaces(dateStr);
+          if (formatted && formatted !== '—') expiry = formatted;
         } else {
-          // Try to find any date that looks like expiry (future date)
-          let allDates = fullText.match(/(\d{2}[- ](?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[- ]\d{4})/gi);
-          if (allDates && allDates.length > 1) {
-            let lastDate = allDates[allDates.length - 1];
-            let dateFound = extractDate(lastDate);
-            if (dateFound) expiry = dateFound;
+          // Look for any date that could be expiry (future date)
+          let futureDates = fullText.match(/(\d{2})\s+([A-Z]{3})\s+(20\d{2})/g);
+          if (futureDates && futureDates.length > 0) {
+            let lastDate = futureDates[futureDates.length - 1];
+            let formatted = formatDateWithSpaces(lastDate);
+            if (formatted && formatted !== '—') expiry = formatted;
           }
         }
       }
@@ -740,7 +746,6 @@
       if (givenName && givenName.length > 50) givenName = givenName.substring(0, 50);
       if (surname && surname.length > 50) surname = surname.substring(0, 50);
       
-      // If we have at least a name or passport, return data
       if (!givenName && !surname && !passport) return null;
       
       return {
@@ -763,9 +768,9 @@
         return;
       }
       const rowsForExcel = extractedRows.map((r, idx) => {
-        const dob = r.dob && r.dob !== '—' && r.dob !== 'undefined' ? formatDatePlain(r.dob) : '';
-        const issue = r.issue && r.issue !== '—' && r.issue !== 'undefined' ? formatDatePlain(r.issue) : '';
-        const expiry = r.expiry && r.expiry !== '—' && r.expiry !== 'undefined' ? formatDatePlain(r.expiry) : '';
+        const dob = r.dob && r.dob !== '—' && r.dob !== 'undefined' ? formatDateWithSpaces(r.dob) : '';
+        const issue = r.issue && r.issue !== '—' && r.issue !== 'undefined' ? formatDateWithSpaces(r.issue) : '';
+        const expiry = r.expiry && r.expiry !== '—' && r.expiry !== 'undefined' ? formatDateWithSpaces(r.expiry) : '';
         return {
           '#': idx+1,
           'Given Name': r.givenName || '',
